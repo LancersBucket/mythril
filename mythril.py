@@ -2,14 +2,20 @@
 # https://stackoverflow.com/a/8775928
 # https://stackoverflow.com/a/49354406
 
-import sys, random, os, threading, pygame
 from math import ceil, floor
 from time import sleep
+from sys import exit as sysexit
+import random, os, threading, pygame
 from pygame import mixer, USEREVENT
-sys.path.append('../Carbon')
 import dearpygui.dearpygui as dpg
 from mutagen.mp3 import MP3
 
+currentPos = 0
+tags = []
+queue = []
+playing = False
+paused = False
+currentBank = ""
 loop = False
 fade = False
 SONGEND = USEREVENT+1
@@ -20,11 +26,11 @@ songLength = -1
 wantToSwap = False
 
 # Helper function to show a status message in the status bar
-def showMessage(msg):
+def show_message(msg):
     dpg.set_value("status",msg)
 
 # Forward button
-def forwardButton(autoplay=False):
+def forward_button(autoplay=False):
     global currentBank
     global currentSong
     global wantToSwap
@@ -33,26 +39,26 @@ def forwardButton(autoplay=False):
     playing = False
     global paused
     paused = False
-    if (not loop):
-        currentBankItems = dpg.get_item_user_data(currentBank+"List")
-        index = currentBankItems.index(currentSong)
+    if not loop:
+        current_bank_items = dpg.get_item_user_data(currentBank+"List")
+        index = current_bank_items.index(currentSong)
         # Either increments the index by one or shuffles it, depending on the setting
-        if (not shuffle):
-            if ((index + 1) > len(currentBankItems)-1):
+        if not shuffle:
+            if (index + 1) > len(current_bank_items)-1:
                 index = 0
             else:
                 index += 1
         else:
-            index = random.randrange(0, len(currentBankItems)-1)
-        newSong = currentBankItems[index]
-        dpg.set_value(currentBank+"List",newSong)
-        currentSong = newSong
+            index = random.randrange(0, len(current_bank_items)-1)
+        new_song = current_bank_items[index]
+        dpg.set_value(currentBank+"List",new_song)
+        currentSong = new_song
         dpg.configure_item("mythrilPlay",label="Play")
-        if (autoplay):
+        if autoplay:
             playPauseButton()
 
 # Back Button, same thing as forward button but in reverse
-def backButton():
+def back_button():
     global currentBank
     global currentSong
     global wantToSwap
@@ -63,17 +69,17 @@ def backButton():
     wantToSwap = False
     mixer.music.unload()
     mixer.music.stop()
-    currentBankItems = dpg.get_item_user_data(currentBank+"List")
-    index = currentBankItems.index(currentSong)
+    current_bank_items = dpg.get_item_user_data(currentBank+"List")
+    index = current_bank_items.index(currentSong)
 
-    if ((index - 1) < 0):
-        index = len(currentBankItems)-1
+    if (index - 1) < 0:
+        index = len(current_bank_items)-1
     else:
         index -= 1
-    newSong = currentBankItems[index]
-    dpg.set_value(currentBank+"List",newSong)
+    new_song = current_bank_items[index]
+    dpg.set_value(currentBank+"List",new_song)
     #playPauseButton()
-    currentSong = newSong
+    currentSong = new_song
     dpg.configure_item("mythrilPlay",label="Play") 
 
 # Plays the song by handling loading it and volume change and such
@@ -81,7 +87,6 @@ def playSong():
     global queue
     global currentPos
     global playing
-    global config
     global currentBank
     global currentSong
     global songLength
@@ -90,16 +95,16 @@ def playSong():
         currentSong = dpg.get_value(currentBank+"List")
         mixer.music.unload()
         # Loads the music and plays it
-        mixer.music.load(config["musicFolder"]+ '/'+currentBank+'/'+currentSong)
+        mixer.music.load('mythril/'+currentBank+'/'+currentSong)
         mixer.music.set_endevent(SONGEND)
-        volChange()
-        song = MP3(config["musicFolder"]+ '/'+currentBank+'/'+currentSong)
+        vol_change()
+        song = MP3('mythil/'+currentBank+'/'+currentSong)
         songLength = song.info.length*1000
-        mixer.music.play(fade_ms=(int(fade)*config["fadeTimeMS"]))
+        mixer.music.play(fade_ms=(int(fade)*1000))
         wantToSwap = True
 
     except Exception as e:
-        showMessage("Error: No songs are loaded.")
+        show_message("Error: No songs are loaded.")
         print(e)
 
 # Play pause button
@@ -110,30 +115,30 @@ def playPauseButton():
         global currentPos
         if not playing:
             playing = True
-            if (paused):
+            if paused:
                 mixer.music.unpause()
                 paused = False
-                showMessage("Now playing: " + currentSong)
+                show_message("Now playing: " + currentSong)
             else:
                 mixer.music.unload()
                 playSong()
-                showMessage("Now playing: " + currentSong)
+                show_message("Now playing: " + currentSong)
             dpg.set_item_label("mythrilPlay","Pause")
         else:
             playing = False
             paused = True
             mixer.music.pause()
             dpg.set_item_label("mythrilPlay","Play")
-            showMessage("Paused")
-    except:
-        showMessage("Cannot play, no songs are loaded.")
+            show_message("Paused")
+    except Exception:
+        show_message("Cannot play, no songs are loaded.")
 
 # Monitors volume change
-def volChange():
+def vol_change():
     mixer.music.set_volume(dpg.get_value("mythrilVol")/100)
 
 # Handles selecting a song bank to play from
-def selectBank(sender=""):
+def select_bank(sender=""):
     global paused
     paused = False
     global playing
@@ -142,24 +147,24 @@ def selectBank(sender=""):
     global currentSong
     global wantToSwap
     wantToSwap = False
-    if (fade):
-        showMessage("Fading Song...")
-        mixer.music.fadeout(config["fadeTimeMS"])
+    if fade:
+        show_message("Fading Song...")
+        mixer.music.fadeout(1000)
     else:
         mixer.music.stop()
     mixer.music.unload()
     dpg.set_item_label("mythrilPlay","Play")
-    if (not currentBank == ""):
+    if not currentBank == "":
         dpg.configure_item(currentBank+"Text",color=(255,0,0,255))
     item = sender.split("Button")
     currentBank = item[0]
-    currentBankItems = dpg.get_item_user_data(currentBank+"List")
+    current_bank_items = dpg.get_item_user_data(currentBank+"List")
     dpg.configure_item(item[0]+"Text",color=(0,255,0,255))
-    showMessage("Selected bank: " + currentBank)
-    currentSong = currentBankItems[0]
+    show_message("Selected bank: " + currentBank)
+    currentSong = current_bank_items[0]
 
-# checkStatus thread that monitors for the end of a song
-def checkStatus():
+# check_status thread that monitors for the end of a song
+def check_status():
     global playing
     global paused
     global alive
@@ -167,12 +172,12 @@ def checkStatus():
     while alive:
         sleep(0.1)
         try:
-            if (playing):
+            if playing:
                 dpg.set_value("mythrilSeek",pygame.mixer.music.get_pos())
                 dpg.configure_item("mythrilSeek",max_value=songLength)
             else:
                 dpg.set_value("mythrilSeek",-1)
-        except:
+        except Exception:
             pass
 
         for event in pygame.event.get():
@@ -181,10 +186,10 @@ def checkStatus():
                 paused = False
                 try:
                     mixer.music.unload()
-                except:
+                except Exception:
                     pass
-                if (not loop):
-                    forwardButton(autoplay=True)
+                if not loop:
+                    forward_button(autoplay=True)
                 else:
                     playPauseButton()
 
@@ -204,58 +209,41 @@ def destroy():
     t1.join()
     print(t1.is_alive())
 
-def focusWindow():
-    dpg.focus_item("myhtril")
-
-def init():
-    global currentPos
-    currentPos = 0
-    global tags
-    tags = []
-    global queue
-    queue = []
-    global playing
-    playing = False
-    global paused
-    paused = False
-    global currentBank
-    currentBank = ""
-
-def checkFolder(folderName: str, createFolder: bool = True, listFolder: bool = True) -> list[str]:
-    if (not os.path.isdir(folderName)):
-        if (not createFolder):
+def check_folder(folder_name: str, create_folder: bool = True, list_folder: bool = True) -> list[str] | None:
+    if not os.path.isdir(folder_name):
+        if not create_folder:
             return None
         else:
             try:
-                os.mkdir(folderName)
-            except Exception as e:
+                os.mkdir(folder_name)
+            except Exception:
                 return None
-            return os.listdir(folderName)
+            return os.listdir(folder_name)
     else:
-        if (listFolder):
-            return os.listdir(folderName)
+        if (list_folder):
+            return os.listdir(folder_name)
 
 # Helper variable functions
-def flipFade():
+def flip_fade():
     global fade 
     fade = not fade
-def flipLoop():
+def flip_loop():
     global loop
     loop = not loop
-def flipShuffle():
+def flip_shuffle():
     global shuffle
     shuffle = not shuffle
 
 # Automatically swaps the bank if an item is selected in the listbox
-def swapSong(sender):
+def swap_song(sender):
     global wantToSwap
     global currentSong
     wantToSwap = False
     currentSong = dpg.get_value(sender)
-    selectBank(sender.split("List")[0])
+    select_bank(sender.split("List")[0])
 
 # Main function
-def showWindow(show=False):
+def show_window(show=False):
     global tags
     global currentBank
     global fade
@@ -264,26 +252,26 @@ def showWindow(show=False):
     mixer.init()
     # Creates the monitor thread and starts it
     global t1
-    t1 = threading.Thread(target=checkStatus,args=(),daemon=True)
+    t1 = threading.Thread(target=check_status,args=(),daemon=True)
     t1.start()
-    
+
     # Loads categories
-    folders = checkFolder("mythril")
+    folders = check_folder("mythril")
     for tag in folders:
-        if (tag.find(".") == -1):
+        if tag.find(".") == -1:
             tags.append(tag)
 
     with dpg.window(label="Mythril",tag="mythril",show=show,autosize=True,on_close=destroy):
         with dpg.group(horizontal=True):
-            dpg.add_button(label="Back",callback=backButton)
+            dpg.add_button(label="Back",callback=back_button)
             dpg.add_button(label="Play",tag="mythrilPlay",callback=playPauseButton)
-            dpg.add_button(label="Forward",callback=forwardButton)
-        dpg.add_slider_int(tag="mythrilVol",clamped=True,default_value=50,callback=volChange)
+            dpg.add_button(label="Forward",callback=forward_button)
+        dpg.add_slider_int(tag="mythrilVol",clamped=True,default_value=50,callback=vol_change)
         dpg.add_slider_float(tag="mythrilSeek",clamped=True,no_input=True)
         with dpg.group(horizontal=True):
-            dpg.add_checkbox(label="Fade Between Songs",callback=flipFade)
-            dpg.add_checkbox(label="Loop Current Song",callback=flipLoop)
-            dpg.add_checkbox(label="Shuffle",callback=flipShuffle)
+            dpg.add_checkbox(label="Fade Between Songs",callback=flip_fade)
+            dpg.add_checkbox(label="Loop Current Song",callback=flip_loop)
+            dpg.add_checkbox(label="Shuffle",callback=flip_shuffle)
 
         width = 2
         total_length = len(tags)
@@ -302,31 +290,27 @@ def showWindow(show=False):
             currentRow = floor(i/(width))
             parentGroup = groups[currentRow]
             dpg.add_group(tag=notLabel,parent=parentGroup,horizontal=False)
-            dpg.add_text(notLabel,parent=notLabel,color=(255,0,0,255),tag=(notLabel+"Text"))
-            tagSongs = []
+            dpg.add_text(notLabel,parent=notLabel,color=(255,0,0,255),tag=notLabel+"Text")
+            tag_songs = []
             for song in os.listdir("mythril/"+notLabel):
-                tagSongs.append(song)
-            dpg.add_listbox(tagSongs,parent=notLabel,tag=(notLabel+"List"),user_data=tagSongs)#,callback=swapSong)
-            dpg.add_button(label="Select",parent=notLabel,tag=(notLabel+"Button"),callback=selectBank)
-        
+                tag_songs.append(song)
+            dpg.add_listbox(tag_songs,parent=notLabel,tag=(notLabel+"List"),user_data=tag_songs)
+            dpg.add_button(label="Select",parent=notLabel,tag=(notLabel+"Button"),callback=select_bank)
+
         dpg.add_text("HELP",tag="status")
         # Tries to load first bank
         try:
-            selectBank(tags[0])
-        except:
-            showMessage("No Banks Found. Verify folder structure and try again.")
-    dpg.set_item_pos("mythril",[0,19])
+            select_bank(tags[0])
+        except Exception:
+            show_message("No Banks Found. Verify folder structure and try again.")
 
 dpg.create_context()
 dpg.create_viewport(title='Mythril', width=700, height=600)
-
-init()
-showWindow(True)
-
+show_window(True)
 dpg.set_primary_window("mythril",True)
-
 dpg.setup_dearpygui()
 dpg.show_viewport()
 dpg.start_dearpygui()
 dpg.destroy_context()
-exit()
+destroy()
+sysexit()
