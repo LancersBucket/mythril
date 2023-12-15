@@ -55,7 +55,7 @@ def forward_button(autoplay=False):
         currentSong = new_song
         dpg.configure_item("mythrilPlay",label="Play")
         if autoplay:
-            playPauseButton()
+            play_pause_button()
 
 # Back Button, same thing as forward button but in reverse
 def back_button():
@@ -78,12 +78,12 @@ def back_button():
         index -= 1
     new_song = current_bank_items[index]
     dpg.set_value(currentBank+"List",new_song)
-    #playPauseButton()
+    #play_pause_button()
     currentSong = new_song
-    dpg.configure_item("mythrilPlay",label="Play") 
+    dpg.configure_item("mythrilPlay",label="Play")
 
 # Plays the song by handling loading it and volume change and such
-def playSong():
+def play_song():
     global queue
     global currentPos
     global playing
@@ -100,7 +100,7 @@ def playSong():
         vol_change()
         song = MP3('mythil/'+currentBank+'/'+currentSong)
         songLength = song.info.length*1000
-        mixer.music.play(fade_ms=(int(fade)*1000))
+        mixer.music.play(fade_ms=int(fade)*1000)
         wantToSwap = True
 
     except Exception as e:
@@ -108,7 +108,7 @@ def playSong():
         print(e)
 
 # Play pause button
-def playPauseButton():
+def play_pause_button():
     try:
         global playing
         global paused
@@ -121,7 +121,7 @@ def playPauseButton():
                 show_message("Now playing: " + currentSong)
             else:
                 mixer.music.unload()
-                playSong()
+                play_song()
                 show_message("Now playing: " + currentSong)
             dpg.set_item_label("mythrilPlay","Pause")
         else:
@@ -191,7 +191,7 @@ def check_status():
                 if not loop:
                     forward_button(autoplay=True)
                 else:
-                    playPauseButton()
+                    play_pause_button()
 
 # Destroy function, common to all modules
 def destroy():
@@ -209,7 +209,8 @@ def destroy():
     t1.join()
     print(t1.is_alive())
 
-def check_folder(folder_name: str, create_folder: bool = True, list_folder: bool = True) -> list[str] | None:
+def check_folder(folder_name: str, create_folder: bool = True,
+                 list_folder: bool = True) -> list[str] | None:
     if not os.path.isdir(folder_name):
         if not create_folder:
             return None
@@ -220,12 +221,12 @@ def check_folder(folder_name: str, create_folder: bool = True, list_folder: bool
                 return None
             return os.listdir(folder_name)
     else:
-        if (list_folder):
+        if list_folder:
             return os.listdir(folder_name)
 
 # Helper variable functions
 def flip_fade():
-    global fade 
+    global fade
     fade = not fade
 def flip_loop():
     global loop
@@ -264,7 +265,7 @@ def show_window(show=False):
     with dpg.window(label="Mythril",tag="mythril",show=show,autosize=True,on_close=destroy):
         with dpg.group(horizontal=True):
             dpg.add_button(label="Back",callback=back_button)
-            dpg.add_button(label="Play",tag="mythrilPlay",callback=playPauseButton)
+            dpg.add_button(label="Play",tag="mythrilPlay",callback=play_pause_button)
             dpg.add_button(label="Forward",callback=forward_button)
         dpg.add_slider_int(tag="mythrilVol",clamped=True,default_value=50,callback=vol_change)
         dpg.add_slider_float(tag="mythrilSeek",clamped=True,no_input=True)
@@ -281,21 +282,22 @@ def show_window(show=False):
         # Creates groups to put buttons
         groups = []
         for i in range(rows):
-            parentGroups = dpg.add_group(horizontal=True)
-            groups.append(parentGroups)
+            parent_groups = dpg.add_group(horizontal=True)
+            groups.append(parent_groups)
 
         # Adds listboxes to each row, overflows to next row if space is needed
         for i in range(total_length):
-            notLabel = tags[i]
-            currentRow = floor(i/(width))
-            parentGroup = groups[currentRow]
-            dpg.add_group(tag=notLabel,parent=parentGroup,horizontal=False)
-            dpg.add_text(notLabel,parent=notLabel,color=(255,0,0,255),tag=notLabel+"Text")
+            not_label = tags[i]
+            current_row = floor(i/(width))
+            parent_group = groups[current_row]
+            dpg.add_group(tag=not_label,parent=parent_group,horizontal=False)
+            dpg.add_text(not_label,parent=not_label,color=(255,0,0,255),tag=not_label+"Text")
             tag_songs = []
-            for song in os.listdir("mythril/"+notLabel):
+            for song in os.listdir("mythril/"+not_label):
                 tag_songs.append(song)
-            dpg.add_listbox(tag_songs,parent=notLabel,tag=(notLabel+"List"),user_data=tag_songs)
-            dpg.add_button(label="Select",parent=notLabel,tag=(notLabel+"Button"),callback=select_bank)
+            dpg.add_listbox(tag_songs,parent=not_label,tag=(not_label+"List"),user_data=tag_songs)
+            dpg.add_button(label="Select",parent=not_label,tag=(not_label+"Button"),
+                           callback=select_bank)
 
         dpg.add_text("HELP",tag="status")
         # Tries to load first bank
