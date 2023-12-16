@@ -1,2 +1,2 @@
 # mythril
-A purpose build D&amp;D music player
+A purpose built D&amp;D music player
