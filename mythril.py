@@ -9,6 +9,7 @@ from mutagen.mp3 import MP3
 
 SONGEND = USEREVENT+1
 class Status:
+    """General Global Vars"""
     currentPos = 0
     tags = []
     queue = []
@@ -23,13 +24,18 @@ class Status:
     songLength = -1
     wantToSwap = False
     groups = []
+    t1 = None
+    tracking = True
+    fakePos = 0
+    realPos = 0
+    offset = 0
 
-# Helper function to show a status message in the status bar
 def show_message(msg):
+    """Helper function to show a status message in the status bar"""
     dpg.set_value("status",msg)
 
-# Forward button
 def forward_button(autoplay=False):
+    """Forward button handler"""
     Status.wantToSwap = False
     Status.playing = False
     Status.paused = False
@@ -51,8 +57,8 @@ def forward_button(autoplay=False):
         if autoplay:
             play_pause_button()
 
-# Back Button, same thing as forward button but in reverse
 def back_button():
+    """Back Button Handler"""
     Status.playing = False
     Status.paused = False
     Status.wantToSwap = False
@@ -71,8 +77,8 @@ def back_button():
     Status.currentSong = new_song
     dpg.configure_item("mythrilPlay",label="Play")
 
-# Plays the song by handling loading it and volume change and such
 def play_song():
+    """Plays the song by handling loading it and volume change and such"""
     try:
         Status.currentSong = dpg.get_value(Status.currentBank+"List")
         mixer.music.unload()
@@ -81,7 +87,7 @@ def play_song():
         mixer.music.set_endevent(SONGEND)
         vol_change()
         song = MP3('mythril/'+Status.currentBank+'/'+Status.currentSong)
-        Status.songLength = song.info.length*1000
+        Status.songLength = song.info.length
         mixer.music.play(fade_ms=int(Status.fade)*1000)
         Status.wantToSwap = True
 
@@ -89,8 +95,8 @@ def play_song():
         show_message("Error: No songs are loaded.")
         print(e)
 
-# Play pause button
 def play_pause_button():
+    """Play Pause Button Handler"""
     try:
         if not Status.playing:
             Status.playing = True
@@ -112,12 +118,12 @@ def play_pause_button():
     except Exception:
         show_message("Cannot play, no songs are loaded.")
 
-# Monitors volume change
 def vol_change():
+    """Volume Changer Helper"""
     mixer.music.set_volume(dpg.get_value("mythrilVol")/100)
 
-# Handles selecting a song bank to play from
 def select_bank(sender=""):
+    """Handles selecting a song bank to play from"""
     Status.paused = False
     Status.playing = False
     Status.wantToSwap = False
@@ -128,7 +134,7 @@ def select_bank(sender=""):
         mixer.music.stop()
     mixer.music.unload()
     dpg.set_item_label("mythrilPlay","Play")
-    if not Status.currentBank == "":
+    if Status.currentBank != "":
         dpg.configure_item(Status.currentBank+"Text",color=(255,0,0,255))
     item = sender.split("Button")
     Status.currentBank = item[0]
@@ -137,17 +143,18 @@ def select_bank(sender=""):
     show_message("Selected bank: " + Status.currentBank)
     Status.currentSong = current_bank_items[0]
 
-# check_status thread that monitors for the end of a song
 def check_status():
-    pygame.init()
+    """Check_status thread that monitors for the end of a song"""
     while Status.alive:
         sleep(0.1)
         try:
-            if Status.playing:
-                dpg.set_value("mythrilSeek",pygame.mixer.music.get_pos())
+            if Status.playing and Status.tracking:
+                Status.fakePos = mixer.music.get_pos()/1000
+                Status.realPos = Status.fakePos + Status.offset
+                dpg.set_value("mythrilSeek",Status.realPos)
                 dpg.configure_item("mythrilSeek",max_value=Status.songLength)
             else:
-                dpg.set_value("mythrilSeek",-1)
+                dpg.set_value("mythrilSeek",0)
         except Exception:
             pass
 
@@ -155,6 +162,7 @@ def check_status():
             if event.type == SONGEND and Status.wantToSwap:
                 Status.playing = False
                 Status.paused = False
+                Status.offset = 0
                 try:
                     mixer.music.unload()
                 except Exception:
@@ -164,54 +172,61 @@ def check_status():
                 else:
                     play_pause_button()
 
-# Destroy function, common to all modules
 def destroy():
+    """Gracefully kills Mythril"""
     mixer.quit()
-    for group in Status.groups:
-        dpg.delete_item(group)
-    Status.groups = []
-    Status.tags = []
-    dpg.delete_item("mythril")
     Status.alive = False
-    t1.join()
-    print(t1.is_alive())
+    Status.t1.join()
 
 def check_folder(folder_name: str, create_folder: bool = True,
                  list_folder: bool = True) -> list[str] | None:
+    """Checks to make sure a folder exists"""
     if not os.path.isdir(folder_name):
         if not create_folder:
             return None
-        else:
-            try:
-                os.mkdir(folder_name)
-            except Exception:
-                return None
-            return os.listdir(folder_name)
-    else:
-        if list_folder:
-            return os.listdir(folder_name)
+        try:
+            os.mkdir(folder_name)
+        except Exception:
+            return None
+    if list_folder:
+        return os.listdir(folder_name)
 
-# Helper variable functions
 def flip_fade():
+    """Toggles Fade"""
     Status.fade = not Status.fade
 def flip_loop():
+    """Toggles Loop"""
     Status.loop = not Status.loop
 def flip_shuffle():
+    """Toggles Shuffle"""
     Status.shuffle = not Status.shuffle
 
-# Automatically swaps the bank if an item is selected in the listbox
 def swap_song(sender):
+    """Automatically swaps the bank if an item is selected in the listbox"""
     Status.wantToSwap = False
     Status.currentSong = dpg.get_value(sender)
     select_bank(sender.split("List")[0])
 
-# Main function
-def show_window(show=False):
-    mixer.init()
+def seek_clicked():
+    """Checks if mythrilSeek is clicked"""
+    if dpg.is_item_edited("mythrilSeek"):
+        # Disable automatic display
+        Status.tracking = False
+
+        # Store the offset of the seek change into Status.offset
+        # This is needed because mixer.music.get_pos() only reports the total time a song has been playing excluding set_pos() changes
+        # (https://www.pygame.org/docs/ref/music.html#pygame.mixer.music.get_pos)
+        Status.offset = dpg.get_value("mythrilSeek") - mixer.music.get_pos()/1000
+        mixer.music.set_pos(dpg.get_value("mythrilSeek"))
+    else:
+        Status.tracking = True
+
+def show_window():
+    """Main"""
+
     # Creates the monitor thread and starts it
-    global t1
-    t1 = threading.Thread(target=check_status,args=(),daemon=True)
-    t1.start()
+    Status.t1 = threading.Thread(target=check_status,args=(),daemon=True)
+    Status.t1.start()
 
     # Loads categories
     folders = check_folder("mythril")
@@ -219,7 +234,14 @@ def show_window(show=False):
         if tag.find(".") == -1:
             Status.tags.append(tag)
 
-    with dpg.window(label="Mythril",tag="mythril",show=show,autosize=True,on_close=destroy):
+    # Creates a handler for the seek bar
+    # drag and drop callback seems to be broken for sliders
+    with dpg.handler_registry():
+        dpg.add_mouse_click_handler(callback=seek_clicked)
+        dpg.add_mouse_move_handler(callback=seek_clicked)
+        dpg.add_mouse_release_handler(callback=seek_clicked)
+
+    with dpg.window(label="Mythril",tag="mythril",autosize=True,on_close=destroy):
         with dpg.group(horizontal=True):
             dpg.add_button(label="Back",callback=back_button)
             dpg.add_button(label="Play",tag="mythrilPlay",callback=play_pause_button)
@@ -262,9 +284,12 @@ def show_window(show=False):
         except Exception:
             show_message("No Banks Found. Verify folder structure and try again.")
 
+# Required for the event system from pygame
+pygame.init()
+mixer.init()
 dpg.create_context()
 dpg.create_viewport(title='Mythril', width=700, height=600)
-show_window(True)
+show_window()
 dpg.set_primary_window("mythril",True)
 dpg.setup_dearpygui()
 dpg.show_viewport()
