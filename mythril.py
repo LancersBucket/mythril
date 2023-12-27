@@ -1,8 +1,10 @@
 """Mythril"""
+from sys import exit as sysexit
+from threading import Thread
+from random import randrange
 from math import ceil, floor
 from time import sleep
-from sys import exit as sysexit
-import random, os, threading, pygame
+import os, pygame
 from pygame import mixer, USEREVENT
 import dearpygui.dearpygui as dpg
 from mutagen.mp3 import MP3
@@ -10,24 +12,31 @@ from mutagen.mp3 import MP3
 SONGEND = USEREVENT+1
 class Status:
     """General Global Vars"""
+    # Bank Vault
     tags = []
+    groups = []
+
+    # Program Status
     playing = False
     paused = False
     currentBank = ""
+    currentSong = ""
+    wantToSwap = False
+    tracking = True
+    songLength = -1
+    fakePos = 0
+    offset = 0
+    realPos = 0
+
+    # Settings
     loop = False
     fade = False
     shuffle = False
     auto = False
-    currentSong = ""
-    songLength = -1
-    wantToSwap = False
-    groups = []
+
+    # Thread Information
     t1 = None
     t1alive = True
-    tracking = True
-    fakePos = 0
-    realPos = 0
-    offset = 0
 
 def show_message(msg):
     """Helper function to show a status message in the status bar"""
@@ -48,7 +57,7 @@ def forward_button(autoplay=False):
             else:
                 index += 1
         else:
-            index = random.randrange(0, len(current_bank_items)-1)
+            index = randrange(0, len(current_bank_items)-1)
         new_song = current_bank_items[index]
         dpg.set_value(Status.currentBank+"List",new_song)
         Status.currentSong = new_song
@@ -89,7 +98,6 @@ def play_song():
         Status.songLength = song.info.length
         mixer.music.play(fade_ms=int(Status.fade)*1000)
         Status.wantToSwap = True
-
     except Exception as e:
         show_message("Error: No songs are loaded.")
         print(e)
@@ -145,8 +153,8 @@ def select_bank(sender=""):
     if Status.auto:
         play_song()
 
-def check_status():
-    """Check_status thread that monitors for the end of a song"""
+def status_thread():
+    """status_thread thread that monitors for the end of a song"""
     while Status.t1alive:
         sleep(0.1)
         try:
@@ -176,12 +184,12 @@ def check_status():
 
 def destroy():
     """Gracefully kills Mythril"""
-    mixer.quit()
     Status.t1alive = False
     Status.t1.join()
+    mixer.quit()
+    pygame.quit()
 
-def check_folder(folder_name: str, create_folder: bool = True,
-                 list_folder: bool = True) -> list[str] | None:
+def check_folder(folder_name: str, create_folder: bool = True) -> list[str] | None:
     """Checks to make sure a folder exists"""
     if not os.path.isdir(folder_name):
         if not create_folder:
@@ -190,8 +198,7 @@ def check_folder(folder_name: str, create_folder: bool = True,
             os.mkdir(folder_name)
         except Exception:
             return None
-    if list_folder:
-        return os.listdir(folder_name)
+    return os.listdir(folder_name)
 
 def flip_fade():
     """Toggles Fade"""
@@ -230,7 +237,7 @@ def show_window():
     """Main"""
 
     # Creates the monitor thread and starts it
-    Status.t1 = threading.Thread(target=check_status,args=(),daemon=True)
+    Status.t1 = Thread(target=status_thread,args=(),daemon=True)
     Status.t1.start()
 
     # Loads categories
@@ -240,7 +247,7 @@ def show_window():
             Status.tags.append(tag)
 
     # Creates a handler for the seek bar
-    # drag and drop callback seems to be broken for sliders
+    # drag_callback and drop_callback seems to be broken for sliders
     with dpg.handler_registry():
         dpg.add_mouse_click_handler(callback=seek_clicked)
         dpg.add_mouse_move_handler(callback=seek_clicked)
@@ -292,7 +299,8 @@ def show_window():
                            callback=select_bank)
 
         dpg.add_text("Loading",tag="status")
-        # Tries to load first bank
+
+        # Tries to load the first bank
         try:
             select_bank(Status.tags[0])
         except Exception:
