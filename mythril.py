@@ -10,21 +10,20 @@ from mutagen.mp3 import MP3
 SONGEND = USEREVENT+1
 class Status:
     """General Global Vars"""
-    currentPos = 0
     tags = []
-    queue = []
     playing = False
     paused = False
     currentBank = ""
     loop = False
     fade = False
-    currentSong = ""
-    alive = True
     shuffle = False
+    auto = False
+    currentSong = ""
     songLength = -1
     wantToSwap = False
     groups = []
     t1 = None
+    t1alive = True
     tracking = True
     fakePos = 0
     realPos = 0
@@ -127,6 +126,7 @@ def select_bank(sender=""):
     Status.paused = False
     Status.playing = False
     Status.wantToSwap = False
+    Status.offset = 0
     if Status.fade:
         show_message("Fading Song...")
         mixer.music.fadeout(1000)
@@ -142,10 +142,12 @@ def select_bank(sender=""):
     dpg.configure_item(item[0]+"Text",color=(0,255,0,255))
     show_message("Selected bank: " + Status.currentBank)
     Status.currentSong = current_bank_items[0]
+    if Status.auto:
+        play_song()
 
 def check_status():
     """Check_status thread that monitors for the end of a song"""
-    while Status.alive:
+    while Status.t1alive:
         sleep(0.1)
         try:
             if Status.playing and Status.tracking:
@@ -175,7 +177,7 @@ def check_status():
 def destroy():
     """Gracefully kills Mythril"""
     mixer.quit()
-    Status.alive = False
+    Status.t1alive = False
     Status.t1.join()
 
 def check_folder(folder_name: str, create_folder: bool = True,
@@ -200,6 +202,9 @@ def flip_loop():
 def flip_shuffle():
     """Toggles Shuffle"""
     Status.shuffle = not Status.shuffle
+def flip_auto():
+    """Toggles Auto"""
+    Status.auto = not Status.auto
 
 def swap_song(sender):
     """Automatically swaps the bank if an item is selected in the listbox"""
@@ -249,9 +254,18 @@ def show_window():
         dpg.add_slider_int(tag="mythrilVol",clamped=True,default_value=50,callback=vol_change)
         dpg.add_slider_float(tag="mythrilSeek",clamped=True,no_input=True)
         with dpg.group(horizontal=True):
-            dpg.add_checkbox(label="Fade Between Songs",callback=flip_fade)
-            dpg.add_checkbox(label="Loop Current Song",callback=flip_loop)
-            dpg.add_checkbox(label="Shuffle",callback=flip_shuffle)
+            dpg.add_checkbox(label="Fade Between Songs",callback=flip_fade,tag="Tfbs")
+            with dpg.tooltip("Tfbs"):
+                dpg.add_text("Fade between songs when a song ends and a bank is switched")
+            dpg.add_checkbox(label="Loop Current Song",callback=flip_loop,tag="Tlcs")
+            with dpg.tooltip("Tlcs"):
+                dpg.add_text("Loops the currently selected song")
+            dpg.add_checkbox(label="Shuffle",callback=flip_shuffle,tag="Ts")
+            with dpg.tooltip("Ts"):
+                dpg.add_text("Shuffles the bank")
+            dpg.add_checkbox(label="Auto",callback=flip_auto,tag="Ta")
+            with dpg.tooltip("Ta"):
+                dpg.add_text("Automatically plays the song in the bank when switching to it")
 
         width = 2
         total_length = len(Status.tags)
@@ -277,7 +291,7 @@ def show_window():
             dpg.add_button(label="Select",parent=not_label,tag=(not_label+"Button"),
                            callback=select_bank)
 
-        dpg.add_text("HELP",tag="status")
+        dpg.add_text("Loading",tag="status")
         # Tries to load first bank
         try:
             select_bank(Status.tags[0])
