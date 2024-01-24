@@ -243,7 +243,9 @@ def show_window():
     # Loads categories
     folders = check_folder("mythril")
     for tag in folders:
-        if tag.find(".") == -1:
+        if tag.find(".") == 0 or tag.find("_") == 0:
+            continue
+        else: 
             Status.tags.append(tag)
 
     # Creates a handler for the seek bar
