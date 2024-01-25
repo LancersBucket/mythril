@@ -101,13 +101,13 @@ def play_song():
     try:
         Status.currentSong = dpg.get_value(Status.currentBank+"List")
         if Status.currentSong == "":
-            raise OSError(f"No Files Found In Bank {Status.currentBank}")
+            raise OSError(f"No Songs Found In Bank {Status.currentBank}")
         mixer.music.unload()
         # Loads the music and plays it
-        mixer.music.load('mythril/'+Status.currentBank+'/'+Status.currentSong)
+        mixer.music.load(f"mythril/{Status.currentBank}/{Status.currentSong}")
         mixer.music.set_endevent(SONGEND)
         vol_change()
-        song = MP3('mythril/'+Status.currentBank+'/'+Status.currentSong)
+        song = MP3(f"mythril/{Status.currentBank}/{Status.currentSong}")
         Status.songLength = song.info.length
         mixer.music.play(fade_ms=int(Status.fade)*1000)
         Status.wantToSwap = True
@@ -129,14 +129,13 @@ def play_pause_button():
             if Status.paused:
                 mixer.music.unpause()
                 Status.paused = False
-                show_message("Now playing: " + Status.currentSong)
             else:
                 mixer.music.unload()
                 worked = play_song()
-                if worked == 1:
-                    show_message("Now playing: " + Status.currentSong)
-                else:
+                if worked == 0:
                     return
+
+            show_message(f"Now playing: {Status.currentSong}")
             Status.playing = True
             dpg.set_item_label("mythrilPlay","Pause")
         else:
@@ -174,10 +173,10 @@ def select_bank(sender=""):
     try:
         Status.currentSong = current_bank_items[0]
     except Exception:
-        show_message("Selected bank: " + Status.currentBank + "\nWarning: Bank is empty.", Color.WARNING)
+        show_message(f"Selected bank: {Status.currentBank}\nWarning: Bank is empty.", Color.WARNING)
         return
 
-    show_message("Selected bank: " + Status.currentBank)
+    show_message(f"Selected bank: {Status.currentBank}")
     if Status.auto:
         play_song()
 
@@ -288,18 +287,18 @@ def display_banks():
 
     # Adds listboxes to each row, overflows to next row if space is needed
     for i in range(total_length):
-        not_label = Status.tags[i]
+        bank_tag = Status.tags[i]
         current_row = floor(i/(width))
         parent_group = Status.groups[current_row]
-        dpg.add_group(tag=not_label,parent=parent_group,horizontal=False)
-        dpg.add_text(not_label,parent=not_label,color=(255,0,0,255),tag=not_label+"Text")
+        dpg.add_group(tag=bank_tag,parent=parent_group,horizontal=False)
+        dpg.add_text(bank_tag,parent=bank_tag,color=(255,0,0,255),tag=bank_tag+"Text")
         tag_songs = []
-        for song in os.listdir("mythril/"+not_label):
+        for song in os.listdir(f"mythril/{bank_tag}"):
             tag_songs.append(song)
 
         # TODO: Horribly hardcoded to split the listbox directly down the middle, will need to fix
-        dpg.add_listbox(tag_songs,parent=not_label,tag=(not_label+"List"),user_data=tag_songs,width=676//2)
-        dpg.add_button(label="Select",parent=not_label,tag=(not_label+"Button"),
+        dpg.add_listbox(tag_songs,parent=bank_tag,tag=(bank_tag+"List"),user_data=tag_songs,width=676//2)
+        dpg.add_button(label="Select",parent=bank_tag,tag=(bank_tag+"Button"),
                         callback=select_bank)
 
     # Load the first bank in the list
@@ -374,7 +373,8 @@ def show_window():
             pass
 
         # Status Text
-        dpg.add_text("Loading",tag="status",parent="mythril")
+        # TODO: More hardcoding nands
+        dpg.add_text("Loading",tag="status",parent="mythril",wrap=700-100)
 
     display_banks()
 
@@ -383,7 +383,7 @@ def show_window():
 pygame.init()
 mixer.init()
 dpg.create_context()
-dpg.create_viewport(title=f'Mythril {VERSION}', width=700, height=600)
+dpg.create_viewport(title=f"Mythril {VERSION}", width=700, height=600)
 show_window()
 dpg.set_primary_window("mythril",True)
 dpg.setup_dearpygui()
