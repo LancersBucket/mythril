@@ -4,11 +4,13 @@ from threading import Thread
 from random import randrange
 from math import ceil, floor
 from time import sleep
-import os, pygame
+import os
+import pygame
 from pygame import mixer, USEREVENT
 import dearpygui.dearpygui as dpg
 from mutagen.mp3 import MP3
 
+VERSION = "v0.0.1"
 SONGEND = USEREVENT+1
 class Status:
     """General Global Vars"""
@@ -38,15 +40,24 @@ class Status:
     t1 = None
     t1alive = True
 
-def show_message(msg):
-    """Helper function to show a status message in the status bar"""
+class Color:
+    """Color Vars"""
+    NEUTRAL = (255,255,255,255)
+    WARNING = (232,177,48,255)
+    ERROR = (255,0,0,255)
+
+def show_message(msg: str, color: tuple=(255,255,255,255)) -> None:
+    """Helper function to show a status message in the status text with optional color value"""
     dpg.set_value("status",msg)
+    dpg.configure_item("status",color=color)
 
 def forward_button(autoplay=False):
     """Forward button handler"""
     Status.wantToSwap = False
     Status.playing = False
     Status.paused = False
+
+    # Checks if it set to loop, and if not, go to the next song
     if not Status.loop:
         current_bank_items = dpg.get_item_user_data(Status.currentBank+"List")
         index = current_bank_items.index(Status.currentSong)
@@ -79,16 +90,18 @@ def back_button():
         index = len(current_bank_items)-1
     else:
         index -= 1
+
     new_song = current_bank_items[index]
     dpg.set_value(Status.currentBank+"List",new_song)
-    #play_pause_button()
     Status.currentSong = new_song
     dpg.configure_item("mythrilPlay",label="Play")
 
 def play_song():
-    """Plays the song by handling loading it and volume change and such"""
+    """Plays the song by handling loading it and volume change and such; Returns 1 if success"""
     try:
         Status.currentSong = dpg.get_value(Status.currentBank+"List")
+        if Status.currentSong == "":
+            raise OSError(f"No Files Found In Bank {Status.currentBank}")
         mixer.music.unload()
         # Loads the music and plays it
         mixer.music.load('mythril/'+Status.currentBank+'/'+Status.currentSong)
@@ -98,23 +111,33 @@ def play_song():
         Status.songLength = song.info.length
         mixer.music.play(fade_ms=int(Status.fade)*1000)
         Status.wantToSwap = True
-    except Exception as e:
-        show_message("Error: No songs are loaded.")
+    except OSError as e:
+        show_message(f"Error: No songs are loaded in bank '{Status.currentBank}'.",Color.ERROR)
         print(e)
+        return 0
+    except Exception as e:
+        show_message(str(e),Color.ERROR)
+        print(e)
+        return 0
+
+    return 1
 
 def play_pause_button():
     """Play Pause Button Handler"""
     try:
         if not Status.playing:
-            Status.playing = True
             if Status.paused:
                 mixer.music.unpause()
                 Status.paused = False
                 show_message("Now playing: " + Status.currentSong)
             else:
                 mixer.music.unload()
-                play_song()
-                show_message("Now playing: " + Status.currentSong)
+                worked = play_song()
+                if worked == 1:
+                    show_message("Now playing: " + Status.currentSong)
+                else:
+                    return
+            Status.playing = True
             dpg.set_item_label("mythrilPlay","Pause")
         else:
             Status.playing = False
@@ -123,7 +146,7 @@ def play_pause_button():
             dpg.set_item_label("mythrilPlay","Play")
             show_message("Paused")
     except Exception:
-        show_message("Cannot play, no songs are loaded.")
+        show_message("Cannot play, no songs are loaded.", Color.ERROR)
 
 def vol_change():
     """Volume Changer Helper"""
@@ -148,27 +171,32 @@ def select_bank(sender=""):
     Status.currentBank = item[0]
     current_bank_items = dpg.get_item_user_data(Status.currentBank+"List")
     dpg.configure_item(item[0]+"Text",color=(0,255,0,255))
+    try:
+        Status.currentSong = current_bank_items[0]
+    except Exception:
+        show_message("Selected bank: " + Status.currentBank + "\nWarning: Bank is empty.", Color.WARNING)
+        return
+
     show_message("Selected bank: " + Status.currentBank)
-    Status.currentSong = current_bank_items[0]
     if Status.auto:
         play_song()
 
-def status_thread():
-    """status_thread thread that monitors for the end of a song"""
+def status_thread() -> None:
+    """Status thread thread that monitors for the end of a song"""
     while Status.t1alive:
         sleep(0.1)
         try:
+            # While the song is playing, update the seekbar to the current time
             if Status.playing and Status.tracking:
                 Status.fakePos = mixer.music.get_pos()/1000
                 Status.realPos = Status.fakePos + Status.offset
                 dpg.set_value("mythrilSeek",Status.realPos)
                 dpg.configure_item("mythrilSeek",max_value=Status.songLength)
-            else:
-                dpg.set_value("mythrilSeek",0)
         except Exception:
             pass
 
         for event in pygame.event.get():
+            # If the songend event has fired, unload the song and go to the next one
             if event.type == SONGEND and Status.wantToSwap:
                 Status.playing = False
                 Status.paused = False
@@ -190,13 +218,14 @@ def destroy():
     pygame.quit()
 
 def check_folder(folder_name: str, create_folder: bool = True) -> list[str] | None:
-    """Checks to make sure a folder exists"""
+    """Checks to make sure a folder exists and returns it's contents. If not, optionally create it"""
     if not os.path.isdir(folder_name):
         if not create_folder:
             return None
         try:
             os.mkdir(folder_name)
-        except Exception:
+        except Exception as e:
+            print(e)
             return None
     return os.listdir(folder_name)
 
@@ -233,35 +262,99 @@ def seek_clicked():
     else:
         Status.tracking = True
 
-def show_window():
-    """Main"""
-
-    # Creates the monitor thread and starts it
-    Status.t1 = Thread(target=status_thread,args=(),daemon=True)
-    Status.t1.start()
-
-    # Loads categories
+def display_banks():
+    """Gets folder, folder list and adds them to the tag list"""
     folders = check_folder("mythril")
     for tag in folders:
         if tag.find(".") == 0 or tag.find("_") == 0:
             continue
-        else: 
+        else:
             Status.tags.append(tag)
 
-    # Creates a handler for the seek bar
-    # drag_callback and drop_callback seems to be broken for sliders
+    # Check if tags is empty, and if it is, break out early
+    if len(Status.tags) == 0:
+        show_message("No Valid Banks Found. Verify folder structure and try again (Use ctrl+r to reload banks).", Color.ERROR)
+        return
+
+    width = 2
+    total_length = len(Status.tags)
+    # Calculaltes how many rows are needed with given length
+    rows = ceil(total_length / width)
+
+    # Creates groups to put buttons
+    for i in range(rows):
+        parent_groups = dpg.add_group(horizontal=True,parent="BankGroup")
+        Status.groups.append(parent_groups)
+
+    # Adds listboxes to each row, overflows to next row if space is needed
+    for i in range(total_length):
+        not_label = Status.tags[i]
+        current_row = floor(i/(width))
+        parent_group = Status.groups[current_row]
+        dpg.add_group(tag=not_label,parent=parent_group,horizontal=False)
+        dpg.add_text(not_label,parent=not_label,color=(255,0,0,255),tag=not_label+"Text")
+        tag_songs = []
+        for song in os.listdir("mythril/"+not_label):
+            tag_songs.append(song)
+
+        # TODO: Horribly hardcoded to split the listbox directly down the middle, will need to fix
+        dpg.add_listbox(tag_songs,parent=not_label,tag=(not_label+"List"),user_data=tag_songs,width=676//2)
+        dpg.add_button(label="Select",parent=not_label,tag=(not_label+"Button"),
+                        callback=select_bank)
+
+    # Load the first bank in the list
+    select_bank(Status.tags[0])
+
+def destroy_banks():
+    """Destroys Banks. Used for regenerating them."""
+    for i in Status.groups:
+        dpg.delete_item(i)
+
+    Status.groups = []
+    Status.tags = []
+
+def on_key_ctrl():
+    """Keyboard hotkey handler (for pressing ctrl)"""
+    # Rebuild Banks (ctrl+r)
+    if dpg.is_key_down(dpg.mvKey_R):
+        destroy_banks()
+        display_banks()
+        show_message("Regenerated banks.")
+    # Skip Forward (ctrl+right / ctrl+down)
+    if dpg.is_key_down(dpg.mvKey_Right) or dpg.is_key_down(dpg.mvKey_Down):
+        forward_button()
+    # Skip Backward (ctrl+left / ctrl+up)
+    if dpg.is_key_down(dpg.mvKey_Left) or dpg.is_key_down(dpg.mvKey_Up):
+        back_button()
+
+def show_window():
+    """Main"""
+    # Creates the monitor thread and starts it
+    Status.t1 = Thread(target=status_thread,args=(),daemon=True)
+    Status.t1.start()
+
     with dpg.handler_registry():
+        # Creates a handler for the seek bar
+        # drag_callback and drop_callback seems to be broken for sliders
         dpg.add_mouse_click_handler(callback=seek_clicked)
         dpg.add_mouse_move_handler(callback=seek_clicked)
         dpg.add_mouse_release_handler(callback=seek_clicked)
 
+        # Hotkey handler
+        dpg.add_key_press_handler(dpg.mvKey_Control, callback=on_key_ctrl)
+        dpg.add_key_press_handler(dpg.mvKey_Spacebar, callback=play_pause_button)
+
     with dpg.window(label="Mythril",tag="mythril",autosize=True,on_close=destroy):
+        # Main song controls
         with dpg.group(horizontal=True):
             dpg.add_button(label="Back",callback=back_button)
             dpg.add_button(label="Play",tag="mythrilPlay",callback=play_pause_button)
             dpg.add_button(label="Forward",callback=forward_button)
-        dpg.add_slider_int(tag="mythrilVol",clamped=True,default_value=50,callback=vol_change)
+
+        dpg.add_slider_int(tag="mythrilVol",clamped=False,default_value=50,callback=vol_change)
         dpg.add_slider_float(tag="mythrilSeek",clamped=True,no_input=True)
+
+        # Song Playing Configuration
         with dpg.group(horizontal=True):
             dpg.add_checkbox(label="Fade Between Songs",callback=flip_fade,tag="Tfbs")
             with dpg.tooltip("Tfbs"):
@@ -272,52 +365,32 @@ def show_window():
             dpg.add_checkbox(label="Shuffle",callback=flip_shuffle,tag="Ts")
             with dpg.tooltip("Ts"):
                 dpg.add_text("Shuffles the bank")
-            dpg.add_checkbox(label="Auto",callback=flip_auto,tag="Ta")
+            dpg.add_checkbox(label="Auto Start",callback=flip_auto,tag="Ta")
             with dpg.tooltip("Ta"):
                 dpg.add_text("Automatically plays the song in the bank when switching to it")
 
-        width = 2
-        total_length = len(Status.tags)
-        # Calculaltes how many rows are needed with given length
-        rows = ceil(total_length / width)
+        # Bank Group
+        with dpg.group(tag="BankGroup"):
+            pass
 
-        # Creates groups to put buttons
-        for i in range(rows):
-            parent_groups = dpg.add_group(horizontal=True)
-            Status.groups.append(parent_groups)
+        # Status Text
+        dpg.add_text("Loading",tag="status",parent="mythril")
 
-        # Adds listboxes to each row, overflows to next row if space is needed
-        for i in range(total_length):
-            not_label = Status.tags[i]
-            current_row = floor(i/(width))
-            parent_group = Status.groups[current_row]
-            dpg.add_group(tag=not_label,parent=parent_group,horizontal=False)
-            dpg.add_text(not_label,parent=not_label,color=(255,0,0,255),tag=not_label+"Text")
-            tag_songs = []
-            for song in os.listdir("mythril/"+not_label):
-                tag_songs.append(song)
-            dpg.add_listbox(tag_songs,parent=not_label,tag=(not_label+"List"),user_data=tag_songs)
-            dpg.add_button(label="Select",parent=not_label,tag=(not_label+"Button"),
-                           callback=select_bank)
+    display_banks()
 
-        dpg.add_text("Loading",tag="status")
-
-        # Tries to load the first bank
-        try:
-            select_bank(Status.tags[0])
-        except Exception:
-            show_message("No Banks Found. Verify folder structure and try again.")
-
+# Main Process
 # Required for the event system from pygame
 pygame.init()
 mixer.init()
 dpg.create_context()
-dpg.create_viewport(title='Mythril', width=700, height=600)
+dpg.create_viewport(title=f'Mythril {VERSION}', width=700, height=600)
 show_window()
 dpg.set_primary_window("mythril",True)
 dpg.setup_dearpygui()
 dpg.show_viewport()
 dpg.start_dearpygui()
+
+# Cleanup and Exit
 dpg.destroy_context()
 destroy()
 sysexit()
