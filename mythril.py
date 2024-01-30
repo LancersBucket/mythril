@@ -1,3 +1,5 @@
+# TODO: Autostart doesn't visually display song playing
+
 """Mythril"""
 from sys import exit as sysexit
 from threading import Thread
@@ -110,15 +112,20 @@ def play_song():
         song = MP3(f"mythril/{Status.currentBank}/{Status.currentSong}")
         Status.songLength = song.info.length
         mixer.music.play(fade_ms=int(Status.fade)*1000)
-        Status.wantToSwap = True
     except OSError as e:
         show_message(f"Error: No songs are loaded in bank '{Status.currentBank}'.",Color.ERROR)
         print(e)
-        return 0
+        return -1
     except Exception as e:
+        if str(e).startswith("ModPlug_Load"):
+            show_message(f"Failed to load song: {e}\n(Not an mp3 file?)",Color.ERROR)
+            print(e)
+            return -1
         show_message(str(e),Color.ERROR)
         print(e)
-        return 0
+        return -1
+    finally:
+        Status.wantToSwap = True
 
     return 1
 
@@ -132,7 +139,7 @@ def play_pause_button():
             else:
                 mixer.music.unload()
                 worked = play_song()
-                if worked == 0:
+                if worked == -1:
                     return
 
             show_message(f"Now playing: {Status.currentSong}")
@@ -263,8 +270,8 @@ def seek_clicked():
 
 def display_banks():
     """Gets folder, folder list and adds them to the tag list"""
-    folders = check_folder("mythril")
-    for tag in folders:
+    folder = check_folder("mythril")
+    for tag in folder:
         if tag.find(".") == 0 or tag.find("_") == 0:
             continue
         else:
@@ -294,10 +301,12 @@ def display_banks():
         dpg.add_text(bank_tag,parent=bank_tag,color=(255,0,0,255),tag=bank_tag+"Text")
         tag_songs = []
         for song in os.listdir(f"mythril/{bank_tag}"):
-            tag_songs.append(song)
+            # Only display files in which mythril can actually play (currently only .mp3)
+            if song.lower().endswith(".mp3"):
+                tag_songs.append(song)
 
         # TODO: Horribly hardcoded to split the listbox directly down the middle, will need to fix
-        dpg.add_listbox(tag_songs,parent=bank_tag,tag=(bank_tag+"List"),user_data=tag_songs,width=676//2)
+        dpg.add_listbox(tag_songs,parent=bank_tag,tag=(bank_tag+"List"),user_data=tag_songs,width=676//2,num_items=10)
         dpg.add_button(label="Select",parent=bank_tag,tag=(bank_tag+"Button"),
                         callback=select_bank)
 
