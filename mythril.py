@@ -40,7 +40,7 @@ class Status:
 
     # Thread Information
     t1 = None
-    t1alive = True
+    t1keepalive = True
 
 class Color:
     """Color Vars"""
@@ -83,8 +83,10 @@ def back_button():
     Status.playing = False
     Status.paused = False
     Status.wantToSwap = False
-    mixer.music.unload()
+
+    mixer.music.set_endevent()
     mixer.music.stop()
+    mixer.music.unload()
     current_bank_items = dpg.get_item_user_data(Status.currentBank+"List")
     index = current_bank_items.index(Status.currentSong)
 
@@ -98,7 +100,7 @@ def back_button():
     Status.currentSong = new_song
     dpg.configure_item("mythrilPlay",label="Play")
 
-def play_song():
+def __play_song():
     """Plays the song by handling loading it and volume change and such; Returns 1 if success"""
     try:
         Status.currentSong = dpg.get_value(Status.currentBank+"List")
@@ -138,7 +140,7 @@ def play_pause_button():
                 Status.paused = False
             else:
                 mixer.music.unload()
-                worked = play_song()
+                worked = __play_song()
                 if worked == -1:
                     return
 
@@ -164,6 +166,11 @@ def select_bank(sender=""):
     Status.playing = False
     Status.wantToSwap = False
     Status.offset = 0
+
+    # Clear the endevent so t1 doesn't fire when the song is stopped
+    # Prevents skipping forward one song when selecting a new bank
+    mixer.music.set_endevent()
+
     if Status.fade:
         show_message("Fading Song...")
         mixer.music.fadeout(1000)
@@ -185,11 +192,11 @@ def select_bank(sender=""):
 
     show_message(f"Selected bank: {Status.currentBank}")
     if Status.auto:
-        play_song()
+        play_pause_button()
 
 def status_thread() -> None:
     """Status thread thread that monitors for the end of a song"""
-    while Status.t1alive:
+    while Status.t1keepalive:
         sleep(0.1)
         try:
             # While the song is playing, update the seekbar to the current time
@@ -218,8 +225,10 @@ def status_thread() -> None:
 
 def destroy():
     """Gracefully kills Mythril"""
-    Status.t1alive = False
+    # Stop t1 thread loop and join it to the main process to terminiate it
+    Status.t1keepalive = False
     Status.t1.join()
+
     mixer.quit()
     pygame.quit()
 
