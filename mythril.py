@@ -84,9 +84,8 @@ def skip_song(num_of_songs: int) -> None:
     # Call play_pause_button() to start the song
     play_pause_button()
 
-
 def forward_button():
-    """Forward button handler"""
+    """Forward Button Handler"""
     skip_song(1)
 
 def back_button():
@@ -94,7 +93,7 @@ def back_button():
     skip_song(-1)
 
 def __play_song():
-    """Plays the song by handling loading it and volume change and such; Returns 1 if success"""
+    """Plays the song by handling loading it and volume change and such; Returns 1 if success, -1 on error"""
     try:
         Status.current_song = dpg.get_value(Status.current_bank+"List")
         if Status.current_song == "":
@@ -169,6 +168,7 @@ def select_bank(sender=""):
         mixer.music.fadeout(1000)
     else:
         mixer.music.stop()
+
     mixer.music.unload()
     dpg.set_item_label("mythrilPlay","Play")
     if Status.current_bank != "":
@@ -212,7 +212,7 @@ def status_thread() -> None:
                 except Exception:
                     pass
                 if not Status.loop:
-                    forward_button()
+                    skip_song(1)
                 else:
                     play_pause_button()
 
@@ -263,7 +263,8 @@ def seek_clicked():
         Status.t1_seek_pos_update = False
 
         # Store the offset of the seek change into Status.offset
-        # This is needed because mixer.music.get_pos() only reports the total time a song has been playing excluding set_pos() changes
+        # This is needed because mixer.music.get_pos() only reports the total time a song
+        # has been playing excluding set_pos() changes
         # (https://www.pygame.org/docs/ref/music.html#pygame.mixer.music.get_pos)
         Status.seek_offset = dpg.get_value("mythrilSeek") - mixer.music.get_pos()/1000
         mixer.music.set_pos(dpg.get_value("mythrilSeek"))
@@ -333,10 +334,10 @@ def on_key_ctrl():
         show_message("Regenerated banks.")
     # Skip Forward (ctrl+right / ctrl+down)
     if dpg.is_key_down(dpg.mvKey_Right) or dpg.is_key_down(dpg.mvKey_Down):
-        forward_button()
+        skip_song(1)
     # Skip Backward (ctrl+left / ctrl+up)
     if dpg.is_key_down(dpg.mvKey_Left) or dpg.is_key_down(dpg.mvKey_Up):
-        back_button()
+        skip_song(-1)
 
 def show_window():
     """Main"""
