@@ -53,52 +53,45 @@ def show_message(msg: str, color: tuple=(255,255,255,255)) -> None:
     dpg.set_value("status",msg)
     dpg.configure_item("status",color=color)
 
-def forward_button(autoplay=False):
-    """Forward button handler"""
-    Status.t1_ready_to_swap = False
-    Status.playing = False
-    Status.paused = False
-
-    # Checks if it set to loop, and if not, go to the next song
-    if not Status.loop:
-        current_bank_items = dpg.get_item_user_data(Status.current_bank+"List")
-        index = current_bank_items.index(Status.current_song)
-        # Either increments the index by one or shuffles it, depending on the setting
-        if not Status.shuffle:
-            if (index + 1) > len(current_bank_items)-1:
-                index = 0
-            else:
-                index += 1
-        else:
-            index = randrange(0, len(current_bank_items)-1)
-        new_song = current_bank_items[index]
-        dpg.set_value(Status.current_bank+"List",new_song)
-        Status.current_song = new_song
-        dpg.configure_item("mythrilPlay",label="Play")
-        if autoplay:
-            play_pause_button()
-
-def back_button():
-    """Back Button Handler"""
+def skip_song(num_of_songs: int) -> None:
+    """Takes an number input (positive or negative) and skips that many songs"""
+    # Set variables to prepare for skipping
     Status.playing = False
     Status.paused = False
     Status.t1_ready_to_swap = False
 
-    mixer.music.set_endevent()
-    mixer.music.stop()
-    mixer.music.unload()
+    # Get the current selected item list and the index of the current song
     current_bank_items = dpg.get_item_user_data(Status.current_bank+"List")
     index = current_bank_items.index(Status.current_song)
 
-    if (index - 1) < 0:
-        index = len(current_bank_items)-1
+    # Either increments the index by num_of_songs or shuffles it, depending on the setting
+    if not Status.shuffle:
+        if (index + num_of_songs) > len(current_bank_items)-1:
+            index = 0
+        else:
+            index += num_of_songs
     else:
-        index -= 1
+        index = randrange(0, len(current_bank_items)-1)
 
+    # Set the new song and update the listbox to select the new song
     new_song = current_bank_items[index]
     dpg.set_value(Status.current_bank+"List",new_song)
     Status.current_song = new_song
+
+    # Forcebly set the play/pause button to Play (since the play/pause system was skipped)
     dpg.configure_item("mythrilPlay",label="Play")
+
+    # Call play_pause_button() to start the song
+    play_pause_button()
+
+
+def forward_button():
+    """Forward button handler"""
+    skip_song(1)
+
+def back_button():
+    """Back Button Handler"""
+    skip_song(-1)
 
 def __play_song():
     """Plays the song by handling loading it and volume change and such; Returns 1 if success"""
@@ -219,7 +212,7 @@ def status_thread() -> None:
                 except Exception:
                     pass
                 if not Status.loop:
-                    forward_button(autoplay=True)
+                    forward_button()
                 else:
                     play_pause_button()
 
