@@ -1,7 +1,5 @@
-# TODO: Autostart doesn't visually display song playing
-
 """Mythril"""
-from sys import exit as sysexit
+from sys import exit as sys_exit
 from threading import Thread
 from random import randrange
 from math import ceil, floor
@@ -17,20 +15,20 @@ SONGEND = USEREVENT+1
 class Status:
     """General Global Vars"""
     # Bank Vault
-    tags = []
-    groups = []
+    folder_groups = []
+    bank_groups = []
 
     # Program Status
     playing = False
     paused = False
-    currentBank = ""
-    currentSong = ""
-    wantToSwap = False
-    tracking = True
-    songLength = -1
-    fakePos = 0
-    offset = 0
-    realPos = 0
+    current_bank = ""
+    current_song = ""
+    current_song_length = -1
+
+    # Rewind and skip forward handling
+    seek_fake_position = 0
+    seek_offset = 0
+    seek_real_position = 0
 
     # Settings
     loop = False
@@ -40,7 +38,9 @@ class Status:
 
     # Thread Information
     t1 = None
-    t1keepalive = True
+    t1_keepalive = True
+    t1_ready_to_swap = False
+    t1_seek_pos_update = True
 
 class Color:
     """Color Vars"""
@@ -55,14 +55,14 @@ def show_message(msg: str, color: tuple=(255,255,255,255)) -> None:
 
 def forward_button(autoplay=False):
     """Forward button handler"""
-    Status.wantToSwap = False
+    Status.t1_ready_to_swap = False
     Status.playing = False
     Status.paused = False
 
     # Checks if it set to loop, and if not, go to the next song
     if not Status.loop:
-        current_bank_items = dpg.get_item_user_data(Status.currentBank+"List")
-        index = current_bank_items.index(Status.currentSong)
+        current_bank_items = dpg.get_item_user_data(Status.current_bank+"List")
+        index = current_bank_items.index(Status.current_song)
         # Either increments the index by one or shuffles it, depending on the setting
         if not Status.shuffle:
             if (index + 1) > len(current_bank_items)-1:
@@ -72,8 +72,8 @@ def forward_button(autoplay=False):
         else:
             index = randrange(0, len(current_bank_items)-1)
         new_song = current_bank_items[index]
-        dpg.set_value(Status.currentBank+"List",new_song)
-        Status.currentSong = new_song
+        dpg.set_value(Status.current_bank+"List",new_song)
+        Status.current_song = new_song
         dpg.configure_item("mythrilPlay",label="Play")
         if autoplay:
             play_pause_button()
@@ -82,13 +82,13 @@ def back_button():
     """Back Button Handler"""
     Status.playing = False
     Status.paused = False
-    Status.wantToSwap = False
+    Status.t1_ready_to_swap = False
 
     mixer.music.set_endevent()
     mixer.music.stop()
     mixer.music.unload()
-    current_bank_items = dpg.get_item_user_data(Status.currentBank+"List")
-    index = current_bank_items.index(Status.currentSong)
+    current_bank_items = dpg.get_item_user_data(Status.current_bank+"List")
+    index = current_bank_items.index(Status.current_song)
 
     if (index - 1) < 0:
         index = len(current_bank_items)-1
@@ -96,26 +96,26 @@ def back_button():
         index -= 1
 
     new_song = current_bank_items[index]
-    dpg.set_value(Status.currentBank+"List",new_song)
-    Status.currentSong = new_song
+    dpg.set_value(Status.current_bank+"List",new_song)
+    Status.current_song = new_song
     dpg.configure_item("mythrilPlay",label="Play")
 
 def __play_song():
     """Plays the song by handling loading it and volume change and such; Returns 1 if success"""
     try:
-        Status.currentSong = dpg.get_value(Status.currentBank+"List")
-        if Status.currentSong == "":
-            raise OSError(f"No Songs Found In Bank {Status.currentBank}")
+        Status.current_song = dpg.get_value(Status.current_bank+"List")
+        if Status.current_song == "":
+            raise OSError(f"No Songs Found In Bank {Status.current_bank}")
         mixer.music.unload()
         # Loads the music and plays it
-        mixer.music.load(f"mythril/{Status.currentBank}/{Status.currentSong}")
+        mixer.music.load(f"mythril/{Status.current_bank}/{Status.current_song}")
         mixer.music.set_endevent(SONGEND)
         vol_change()
-        song = MP3(f"mythril/{Status.currentBank}/{Status.currentSong}")
-        Status.songLength = song.info.length
+        song = MP3(f"mythril/{Status.current_bank}/{Status.current_song}")
+        Status.current_song_length = song.info.length
         mixer.music.play(fade_ms=int(Status.fade)*1000)
     except OSError as e:
-        show_message(f"Error: No songs are loaded in bank '{Status.currentBank}'.",Color.ERROR)
+        show_message(f"Error: No songs are loaded in bank '{Status.current_bank}'.",Color.ERROR)
         print(e)
         return -1
     except Exception as e:
@@ -127,7 +127,7 @@ def __play_song():
         print(e)
         return -1
     finally:
-        Status.wantToSwap = True
+        Status.t1_ready_to_swap = True
 
     return 1
 
@@ -144,7 +144,7 @@ def play_pause_button():
                 if worked == -1:
                     return
 
-            show_message(f"Now playing: {Status.currentSong}")
+            show_message(f"Now playing: {Status.current_song}")
             Status.playing = True
             dpg.set_item_label("mythrilPlay","Pause")
         else:
@@ -164,8 +164,8 @@ def select_bank(sender=""):
     """Handles selecting a song bank to play from"""
     Status.paused = False
     Status.playing = False
-    Status.wantToSwap = False
-    Status.offset = 0
+    Status.t1_ready_to_swap = False
+    Status.seek_offset = 0
 
     # Clear the endevent so t1 doesn't fire when the song is stopped
     # Prevents skipping forward one song when selecting a new bank
@@ -178,42 +178,42 @@ def select_bank(sender=""):
         mixer.music.stop()
     mixer.music.unload()
     dpg.set_item_label("mythrilPlay","Play")
-    if Status.currentBank != "":
-        dpg.configure_item(Status.currentBank+"Text",color=(255,0,0,255))
+    if Status.current_bank != "":
+        dpg.configure_item(Status.current_bank+"Text",color=(255,0,0,255))
     item = sender.split("Button")
-    Status.currentBank = item[0]
-    current_bank_items = dpg.get_item_user_data(Status.currentBank+"List")
+    Status.current_bank = item[0]
+    current_bank_items = dpg.get_item_user_data(Status.current_bank+"List")
     dpg.configure_item(item[0]+"Text",color=(0,255,0,255))
     try:
-        Status.currentSong = current_bank_items[0]
+        Status.current_song = current_bank_items[0]
     except Exception:
-        show_message(f"Selected bank: {Status.currentBank}\nWarning: Bank is empty.", Color.WARNING)
+        show_message(f"Selected bank: {Status.current_bank}\nWarning: Bank is empty.", Color.WARNING)
         return
 
-    show_message(f"Selected bank: {Status.currentBank}")
+    show_message(f"Selected bank: {Status.current_bank}")
     if Status.auto:
         play_pause_button()
 
 def status_thread() -> None:
     """Status thread thread that monitors for the end of a song"""
-    while Status.t1keepalive:
+    while Status.t1_keepalive:
         sleep(0.1)
         try:
             # While the song is playing, update the seekbar to the current time
-            if Status.playing and Status.tracking:
-                Status.fakePos = mixer.music.get_pos()/1000
-                Status.realPos = Status.fakePos + Status.offset
-                dpg.set_value("mythrilSeek",Status.realPos)
-                dpg.configure_item("mythrilSeek",max_value=Status.songLength)
+            if Status.playing and Status.t1_seek_pos_update:
+                Status.seek_fake_position = mixer.music.get_pos()/1000
+                Status.seek_real_position = Status.seek_fake_position + Status.seek_offset
+                dpg.set_value("mythrilSeek",Status.seek_real_position)
+                dpg.configure_item("mythrilSeek",max_value=Status.current_song_length)
         except Exception:
             pass
 
         for event in pygame.event.get():
             # If the songend event has fired, unload the song and go to the next one
-            if event.type == SONGEND and Status.wantToSwap:
+            if event.type == SONGEND and Status.t1_ready_to_swap:
                 Status.playing = False
                 Status.paused = False
-                Status.offset = 0
+                Status.seek_offset = 0
                 try:
                     mixer.music.unload()
                 except Exception:
@@ -226,7 +226,7 @@ def status_thread() -> None:
 def destroy():
     """Gracefully kills Mythril"""
     # Stop t1 thread loop and join it to the main process to terminiate it
-    Status.t1keepalive = False
+    Status.t1_keepalive = False
     Status.t1.join()
 
     mixer.quit()
@@ -259,76 +259,77 @@ def flip_auto():
 
 def swap_song(sender):
     """Automatically swaps the bank if an item is selected in the listbox"""
-    Status.wantToSwap = False
-    Status.currentSong = dpg.get_value(sender)
+    Status.t1_ready_to_swap = False
+    Status.current_song = dpg.get_value(sender)
     select_bank(sender.split("List")[0])
 
 def seek_clicked():
     """Checks if mythrilSeek is clicked"""
     if dpg.is_item_edited("mythrilSeek"):
         # Disable automatic display
-        Status.tracking = False
+        Status.t1_seek_pos_update = False
 
         # Store the offset of the seek change into Status.offset
         # This is needed because mixer.music.get_pos() only reports the total time a song has been playing excluding set_pos() changes
         # (https://www.pygame.org/docs/ref/music.html#pygame.mixer.music.get_pos)
-        Status.offset = dpg.get_value("mythrilSeek") - mixer.music.get_pos()/1000
+        Status.seek_offset = dpg.get_value("mythrilSeek") - mixer.music.get_pos()/1000
         mixer.music.set_pos(dpg.get_value("mythrilSeek"))
     else:
-        Status.tracking = True
+        Status.t1_seek_pos_update = True
 
 def display_banks():
-    """Gets folder, folder list and adds them to the tag list"""
-    folder = check_folder("mythril")
-    for tag in folder:
-        if tag.find(".") == 0 or tag.find("_") == 0:
+    """Gets folder, folder list and adds them to the folder_group list"""
+    root_folder = check_folder("mythril")
+    for folder_group in root_folder:
+        if folder_group.find(".") == 0 or folder_group.find("_") == 0:
             continue
         else:
-            Status.tags.append(tag)
+            Status.folder_groups.append(folder_group)
 
-    # Check if tags is empty, and if it is, break out early
-    if len(Status.tags) == 0:
+    # Check if folder_groups is empty, and if it is, break out early
+    if len(Status.folder_groups) == 0:
         show_message("No Valid Banks Found. Verify folder structure and try again (Use ctrl+r to reload banks).", Color.ERROR)
         return
 
     width = 2
-    total_length = len(Status.tags)
+    total_length = len(Status.folder_groups)
     # Calculaltes how many rows are needed with given length
     rows = ceil(total_length / width)
 
     # Creates groups to put buttons
     for i in range(rows):
         parent_groups = dpg.add_group(horizontal=True,parent="BankGroup")
-        Status.groups.append(parent_groups)
+        Status.bank_groups.append(parent_groups)
 
     # Adds listboxes to each row, overflows to next row if space is needed
     for i in range(total_length):
-        bank_tag = Status.tags[i]
+        bank_folder_group = Status.folder_groups[i]
         current_row = floor(i/(width))
-        parent_group = Status.groups[current_row]
-        dpg.add_group(tag=bank_tag,parent=parent_group,horizontal=False)
-        dpg.add_text(bank_tag,parent=bank_tag,color=(255,0,0,255),tag=bank_tag+"Text")
-        tag_songs = []
-        for song in os.listdir(f"mythril/{bank_tag}"):
+        parent_group = Status.bank_groups[current_row]
+        dpg.add_group(tag=bank_folder_group,parent=parent_group,horizontal=False)
+        dpg.add_text(bank_folder_group,parent=bank_folder_group,color=(255,0,0,255),tag=bank_folder_group+"Text")
+        folder_group_songs = []
+        for song in os.listdir(f"mythril/{bank_folder_group}"):
             # Only display files in which mythril can actually play (currently only .mp3)
             if song.lower().endswith(".mp3"):
-                tag_songs.append(song)
+                folder_group_songs.append(song)
 
         # TODO: Horribly hardcoded to split the listbox directly down the middle, will need to fix
-        dpg.add_listbox(tag_songs,parent=bank_tag,tag=(bank_tag+"List"),user_data=tag_songs,width=676//2,num_items=10)
-        dpg.add_button(label="Select",parent=bank_tag,tag=(bank_tag+"Button"),
+        dpg.add_listbox(folder_group_songs,parent=bank_folder_group,
+                        tag=(bank_folder_group+"List"),user_data=folder_group_songs,width=676//2,num_items=9)
+        dpg.add_button(label="Select",parent=bank_folder_group,tag=(bank_folder_group+"Button"),
                         callback=select_bank)
 
     # Load the first bank in the list
-    select_bank(Status.tags[0])
+    select_bank(Status.folder_groups[0])
 
 def destroy_banks():
     """Destroys Banks. Used for regenerating them."""
-    for i in Status.groups:
+    for i in Status.bank_groups:
         dpg.delete_item(i)
 
-    Status.groups = []
-    Status.tags = []
+    Status.bank_groups = []
+    Status.folder_groups = []
 
 def on_key_ctrl():
     """Keyboard hotkey handler (for pressing ctrl)"""
@@ -368,6 +369,7 @@ def show_window():
             dpg.add_button(label="Play",tag="mythrilPlay",callback=play_pause_button)
             dpg.add_button(label="Forward",callback=forward_button)
 
+        # Volume and Song Seek bars
         dpg.add_slider_int(tag="mythrilVol",clamped=False,default_value=50,callback=vol_change)
         dpg.add_slider_float(tag="mythrilSeek",clamped=True,no_input=True)
 
@@ -411,4 +413,4 @@ dpg.start_dearpygui()
 # Cleanup and Exit
 dpg.destroy_context()
 destroy()
-sysexit()
+sys_exit()
