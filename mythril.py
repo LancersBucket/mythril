@@ -148,9 +148,19 @@ def play_pause_button():
     except Exception:
         show_message("Cannot play, no songs are loaded.", Color.ERROR)
 
+def set_volume(vol: int):
+    """Set volume to provided amount"""
+    dpg.set_value("mythrilVol",vol)
+    mixer.music.set_volume(vol/100)
+
+def modify_volume(mod_vol: int):
+    """Modify volume by given m_vol amount"""
+    dpg.set_value("mythrilVol",dpg.get_value("mythrilVol")+mod_vol)
+    mixer.music.set_volume(dpg.get_value("mythrilVol")/100)
+
 def vol_change():
     """Volume Changer Helper"""
-    mixer.music.set_volume(dpg.get_value("mythrilVol")/100)
+    set_volume(dpg.get_value("mythrilVol"))
 
 def select_bank(sender=""):
     """Handles selecting a song bank to play from"""
@@ -332,12 +342,18 @@ def on_key_ctrl():
         destroy_banks()
         display_banks()
         show_message("Regenerated banks.")
-    # Skip Forward (ctrl+right / ctrl+down)
-    if dpg.is_key_down(dpg.mvKey_Right) or dpg.is_key_down(dpg.mvKey_Down):
+    # Skip Forward (ctrl+right)
+    if dpg.is_key_down(dpg.mvKey_Right):
         skip_song(1)
-    # Skip Backward (ctrl+left / ctrl+up)
-    if dpg.is_key_down(dpg.mvKey_Left) or dpg.is_key_down(dpg.mvKey_Up):
+    # Skip Backward (ctrl+left)
+    if dpg.is_key_down(dpg.mvKey_Left):
         skip_song(-1)
+    # Volume Down (ctrl+down)
+    if dpg.is_key_down(dpg.mvKey_Down):
+        modify_volume(-2)
+    # Volume Up (ctrl+up)
+    if dpg.is_key_down(dpg.mvKey_Up):
+        modify_volume(2)
 
 def show_window():
     """Main"""
